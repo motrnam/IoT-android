@@ -1,5 +1,5 @@
 import * as Network from 'expo-network';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 export const ESP_HOST = 'http://192.168.4.1';
 export const ESP_SSID = 'ESP8266-AP';       // change to your AP SSID
@@ -9,7 +9,26 @@ let WifiManager = null;
 try {
   // Only available on native (not web)
   WifiManager = require('react-native-wifi-reborn').default;
-} catch {}
+} catch { 
+  console.warn('WiFi module unavailable. Build a dev client to enable it.');
+}
+
+async function ensureAndroidWifiPermissions() {
+  if (Platform.OS !== 'android') return true;
+
+  const perms = [
+    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    // Only exists on Android 13+; guard with a typeof check.
+    ...(PermissionsAndroid.PERMISSIONS.NEARBY_WIFI_DEVICES
+      ? [PermissionsAndroid.PERMISSIONS.NEARBY_WIFI_DEVICES]
+      : []),
+  ];
+
+  const results = await PermissionsAndroid.requestMultiple(perms);
+  return Object.values(results).every(
+    (r) => r === PermissionsAndroid.RESULTS.GRANTED
+  );
+}
 
 export async function isConnectedToEsp() {
   const state = await Network.getNetworkStateAsync();
@@ -32,6 +51,10 @@ export async function connectToEsp() {
   }
   if (!WifiManager) {
     throw new Error('WiFi module unavailable. Build a dev client.');
+  }
+  if (Platform.OS === 'android') {
+    const ok = await ensureAndroidWifiPermissions();
+    if (!ok) throw new Error('WiFi permissions denied. Enable them in Settings.');
   }
   await WifiManager.connectToProtectedSSID(
     ESP_SSID,
